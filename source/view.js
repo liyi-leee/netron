@@ -98,6 +98,12 @@ view.View = class {
                         execute: () => this.export(this._host.document.title + '.svg'),
                         enabled: () => this.activeGraph
                     });
+                    file.add({
+                        label: 'Dump as JSON',
+                        accelerator: 'CmdOrCtrl+Alt+J',
+                        execute: () => this.dump(this._host.document.title + '.json'),
+                        enabled: () => this.activeGraph
+                    });
                 }
                 const edit = this._menu.group('&Edit');
                 edit.add({
@@ -850,6 +856,134 @@ view.View = class {
                 }
             }
         }
+    }
+
+    dump(file){
+        var json_context = {};
+        json_context.nodes=[]
+
+        console.log(this.activeGraph)
+        console.log(this.activeGraph.nodes)
+        console.log(this._graph)
+
+        this.activeGraph.nodes.forEach(function (node, ni) {
+            console.log("====================")
+            json_context.nodes[ni] = {}
+            json_context.nodes[ni].id = ''
+            json_context.nodes[ni].name = (node.name || node.location);
+            json_context.nodes[ni].type = node.type.name.split('.').pop();
+            json_context.nodes[ni].attributes = []
+            json_context.nodes[ni].inputs = []
+            json_context.nodes[ni].outputs = []
+
+            const attributes = node.attributes;
+            if (attributes && attributes.length > 0) {
+                const sortedAttributes = node.attributes.slice();
+                sortedAttributes.sort((a, b) => {
+                    const au = a.name.toUpperCase();
+                    const bu = b.name.toUpperCase();
+                    return (au < bu) ? -1 : (au > bu) ? 1 : 0;
+                });
+
+                sortedAttributes.forEach(function(attr, i){
+                    json_context.nodes[ni].attributes[i] = {}
+                    json_context.nodes[ni].attributes[i].name = attr.name;
+                    let content = new view.Formatter(attr.value, attr.type).toString();
+                    json_context.nodes[ni].attributes[i].attribute = content;
+                });
+            }
+
+            const inputs = node.inputs;
+            if (inputs && inputs.length > 0) {
+                inputs.forEach( function (input, i) {
+                    console.log(input)
+                    json_context.nodes[ni].inputs[i] = {};
+                    json_context.nodes[ni].inputs[i].nick = input.name;
+                    //json_context.nodes[ni].inputs[i].value = input;
+                    if (input.arguments.length > 0){
+                        for (const argument of input.arguments) {
+                            const initializer = argument.initializer;
+                            const type = initializer && initializer.type?initializer.type:argument.type;
+                            const quantization = argument.quantization;
+                            const location = argument.location !== undefined;
+                        
+                            const name = argument.name ? argument.name.split('\n').shift() : '';
+                            var _hasId = name ? true : false;
+                            var _hasCategory = initializer && initializer.category ? true : false;
+                            if (_hasId || (!_hasCategory && !type)) {
+                                _hasId = true;
+                                json_context.nodes[ni].inputs[i].category = name
+                            }
+                            else if (_hasCategory) {
+                                console.log("initializer", initializer)
+                                json_context.nodes[ni].inputs[i].category = initializer.category
+                            }
+
+                            if (type) {
+                                console.log("type", type)
+                                let shape = '';
+                                if (type.shape && type.shape.dimensions &&
+                                    type.shape.dimensions.length > 0 && type.shape.dimensions.every((dim) => !dim || 
+                                    Number.isInteger(dim) || dim instanceof base.Int64 || (typeof dim === 'string'))) {
+                                    shape = type.shape.dimensions.map((dim) => (dim !== null && dim !== undefined) ? dim : '?').join(',');
+                                    shape = shape.length > 16 ? '' : shape;
+                                }
+                                
+                                json_context.nodes[ni].inputs[i].shape = shape
+                                json_context.nodes[ni].inputs[i].type = type.dataType
+                            }
+                        } 
+                    }
+                });
+            }
+
+            const outputs = node.outputs;
+            if (outputs && outputs.length > 0) {
+                outputs.forEach(function(output, i){
+                    console.log(output)
+                    json_context.nodes[ni].outputs[i] = {};
+                    json_context.nodes[ni].outputs[i].nick = output.name;
+                    if (output.arguments.length > 0){
+                        for (const argument of output.arguments) {
+                            const initializer = argument.initializer;
+                            const type = initializer && initializer.type?initializer.type:argument.type;
+                            const quantization = argument.quantization;
+                            const location = argument.location !== undefined;
+                        
+                            const name = argument.name ? argument.name.split('\n').shift() : '';
+                            var _hasId = name ? true : false;
+                            var _hasCategory = initializer && initializer.category ? true : false;
+                            if (_hasId || (!_hasCategory && !type)) {
+                                _hasId = true;
+                                json_context.nodes[ni].outputs[i].name = name
+                            }
+                            else if (_hasCategory) {
+                                json_context.nodes[ni].outputs[i].name = initializer.category
+                            }
+                            
+                            if (type) {
+                                let shape = '';
+                                if (type.shape && type.shape.dimensions &&
+                                    type.shape.dimensions.length > 0 && type.shape.dimensions.every((dim) => !dim || 
+                                    Number.isInteger(dim) || dim instanceof base.Int64 || (typeof dim === 'string'))) {
+                                    shape = type.shape.dimensions.map((dim) => (dim !== null && dim !== undefined) ? dim : '?').join(',');
+                                    shape = shape.length > 16 ? '' : shape;
+                                }
+                                const type_shape = type.toString().split('<').join('&lt;').split('>').join('&gt;').split('[')
+                                json_context.nodes[ni].outputs[i].shape = shape
+                                json_context.nodes[ni].outputs[i].type = type.dataType
+                            }
+                        } 
+                    }
+                    //json_context.nodes[ni].outputs[i].value = output;
+                });
+            }
+        });
+
+        console.log(json_context)
+        var export_json = JSON.stringify(json_context, null, 2);
+        const blob = new Blob([ export_json ], {type: "application/json"});
+        this._host.export(file, blob);
     }
 
     export(file) {
@@ -1734,6 +1868,7 @@ view.Node = class extends grapher.Node {
     }
 
     _add(node) {
+        console.log(node)
         const header =  this.header();
         const styles = [ 'node-item-type' ];
         const type = node.type;
@@ -1784,6 +1919,7 @@ view.Node = class extends grapher.Node {
             return (au < bu) ? -1 : (au > bu) ? 1 : 0;
         });
         if (initializers.length > 0 || hiddenInitializers || sortedAttributes.length > 0) {
+            console.log(initializers)
             const list = this.list();
             list.on('click', () => this.context.view.showNodeProperties(node));
             for (const initializer of initializers) {
