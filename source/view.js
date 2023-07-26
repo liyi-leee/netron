@@ -869,7 +869,7 @@ view.View = class {
         this.activeGraph.nodes.forEach(function (node, ni) {
             console.log("====================")
             json_context.nodes[ni] = {}
-            json_context.nodes[ni].id = ''
+            json_context.nodes[ni].id = ni
             json_context.nodes[ni].name = (node.name || node.location);
             json_context.nodes[ni].type = node.type.name.split('.').pop();
             json_context.nodes[ni].attributes = []
@@ -892,16 +892,19 @@ view.View = class {
                     json_context.nodes[ni].attributes[i].attribute = content;
                 });
             }
-
+            
+            //yili dump
             const inputs = node.inputs;
             if (inputs && inputs.length > 0) {
                 inputs.forEach( function (input, i) {
-                    console.log(input)
                     json_context.nodes[ni].inputs[i] = {};
-                    json_context.nodes[ni].inputs[i].nick = input.name;
-                    //json_context.nodes[ni].inputs[i].value = input;
+                    json_context.nodes[ni].inputs[i].name = input.name;
+                    json_context.nodes[ni].inputs[i].value = []
+                    
                     if (input.arguments.length > 0){
-                        for (const argument of input.arguments) {
+                        input.arguments.forEach( function (argument, j) {
+                            json_context.nodes[ni].inputs[i].value[j] = {}
+
                             const initializer = argument.initializer;
                             const type = initializer && initializer.type?initializer.type:argument.type;
                             const quantization = argument.quantization;
@@ -911,16 +914,17 @@ view.View = class {
                             var _hasId = name ? true : false;
                             var _hasCategory = initializer && initializer.category ? true : false;
                             if (_hasId || (!_hasCategory && !type)) {
-                                _hasId = true;
-                                json_context.nodes[ni].inputs[i].category = name
+                                json_context.nodes[ni].inputs[i].value[j].name = name
                             }
                             else if (_hasCategory) {
-                                console.log("initializer", initializer)
-                                json_context.nodes[ni].inputs[i].category = initializer.category
+                                json_context.nodes[ni].inputs[i].value[j].name = initializer.category
+                            }
+                            else if (type) {
+                                json_context.nodes[ni].inputs[i].value[j].name = type.toString()
                             }
 
                             if (type) {
-                                console.log("type", type)
+                                //The shape is same as the label on the edge.
                                 let shape = '';
                                 if (type.shape && type.shape.dimensions &&
                                     type.shape.dimensions.length > 0 && type.shape.dimensions.every((dim) => !dim || 
@@ -929,22 +933,25 @@ view.View = class {
                                     shape = shape.length > 16 ? '' : shape;
                                 }
                                 
-                                json_context.nodes[ni].inputs[i].shape = shape
-                                json_context.nodes[ni].inputs[i].type = type.dataType
+                                json_context.nodes[ni].inputs[i].value[j].shape = shape
+                                json_context.nodes[ni].inputs[i].value[j].type = type.dataType
                             }
-                        } 
+                        }); //arguments
                     }
-                });
+                }); //inputs
             }
 
             const outputs = node.outputs;
             if (outputs && outputs.length > 0) {
                 outputs.forEach(function(output, i){
-                    console.log(output)
                     json_context.nodes[ni].outputs[i] = {};
-                    json_context.nodes[ni].outputs[i].nick = output.name;
+                    json_context.nodes[ni].outputs[i].name = output.name;
+                    json_context.nodes[ni].outputs[i].value = []
+                    
                     if (output.arguments.length > 0){
-                        for (const argument of output.arguments) {
+                        output.arguments.forEach( function (argument, j) {       
+                            json_context.nodes[ni].outputs[i].value[j] = {}
+                        
                             const initializer = argument.initializer;
                             const type = initializer && initializer.type?initializer.type:argument.type;
                             const quantization = argument.quantization;
@@ -954,11 +961,13 @@ view.View = class {
                             var _hasId = name ? true : false;
                             var _hasCategory = initializer && initializer.category ? true : false;
                             if (_hasId || (!_hasCategory && !type)) {
-                                _hasId = true;
-                                json_context.nodes[ni].outputs[i].name = name
+                                json_context.nodes[ni].outputs[i].value[j].name = name
                             }
                             else if (_hasCategory) {
-                                json_context.nodes[ni].outputs[i].name = initializer.category
+                                json_context.nodes[ni].outputs[i].value[j].name = initializer.category
+                            }
+                            else if (type) {
+                                json_context.nodes[ni].outputs[i].value[j].name = type.toString()
                             }
                             
                             if (type) {
@@ -969,14 +978,12 @@ view.View = class {
                                     shape = type.shape.dimensions.map((dim) => (dim !== null && dim !== undefined) ? dim : '?').join(',');
                                     shape = shape.length > 16 ? '' : shape;
                                 }
-                                const type_shape = type.toString().split('<').join('&lt;').split('>').join('&gt;').split('[')
-                                json_context.nodes[ni].outputs[i].shape = shape
-                                json_context.nodes[ni].outputs[i].type = type.dataType
+                                json_context.nodes[ni].outputs[i].value[j].shape = shape
+                                json_context.nodes[ni].outputs[i].value[j].type = type.dataType
                             }
-                        } 
+                        }); //arguments
                     }
-                    //json_context.nodes[ni].outputs[i].value = output;
-                });
+                }); //output
             }
         });
 
@@ -1868,7 +1875,6 @@ view.Node = class extends grapher.Node {
     }
 
     _add(node) {
-        console.log(node)
         const header =  this.header();
         const styles = [ 'node-item-type' ];
         const type = node.type;
@@ -1919,7 +1925,6 @@ view.Node = class extends grapher.Node {
             return (au < bu) ? -1 : (au > bu) ? 1 : 0;
         });
         if (initializers.length > 0 || hiddenInitializers || sortedAttributes.length > 0) {
-            console.log(initializers)
             const list = this.list();
             list.on('click', () => this.context.view.showNodeProperties(node));
             for (const initializer of initializers) {
@@ -2313,6 +2318,7 @@ view.NodeSidebar = class extends view.Control {
         if (inputs && inputs.length > 0) {
             this._addHeader('Inputs');
             for (const input of inputs) {
+                //yili get the inputs here
                 this._addInput(input.name, input);
             }
         }
@@ -2674,6 +2680,7 @@ view.ParameterView = class extends view.Control {
         this._list = list;
         this._elements = [];
         this._items = [];
+        //yili _addInput and _addOutput in NodeSidebar call here
         for (const argument of list.arguments) {
             const item = new view.ArgumentView(host, argument);
             item.on('export-tensor', (sender, value) => this.emit('export-tensor', value));
@@ -2702,7 +2709,8 @@ view.ArgumentView = class extends view.ValueView {
         super();
         this._host = host;
         this._argument = argument;
-
+        
+        //yili ParameterView call here
         this._element = this._host.document.createElement('div');
         this._element.className = 'sidebar-item-value';
 
